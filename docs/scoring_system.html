@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Autodok — Technician Scoring System</title>
+<style>
+body{font-family:Arial,sans-serif;font-size:11pt;color:#111;max-width:820px;margin:40px auto;padding:0 24px;line-height:1.5;}
+h1{font-size:22pt;margin-bottom:2px;}
+.subtitle{color:#555;font-size:11pt;margin-bottom:24px;}
+h2{font-size:14pt;margin-top:28px;border-bottom:2px solid #333;padding-bottom:4px;}
+h3{font-size:12pt;margin-top:18px;}
+table{width:100%;border-collapse:collapse;margin:10px 0 16px;font-size:10.5pt;}
+th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;vertical-align:top;}
+th{background:#f0f0f0;font-weight:700;}
+.pos{color:#28a745;font-weight:600;}
+.neg{color:#dc3545;font-weight:600;}
+.note{background:#f9f9f9;border-left:3px solid #555;padding:8px 12px;margin:10px 0;font-size:10pt;}
+code{background:#eee;padding:1px 5px;border-radius:3px;font-size:9.5pt;}
+.flow{font-size:12pt;font-family:monospace;background:#f8f8f8;padding:12px 16px;border-radius:6px;margin:10px 0;}
+@media print{body{margin:0;padding:10mm;}h2{page-break-before:auto;}}
+</style>
+</head>
+<body>
+
+<h1>The Autodok</h1>
+<div class="subtitle">Technician Performance Scoring System — Complete Reference</div>
+
+<h2>1. Overview</h2>
+<p>The scoring system tracks technician performance by recording points for every significant event on a Job Order (JO). Points are stored in the <code>technician_points</code> table in real-time. The leaderboard and history are derived directly from these records.</p>
+<div class="note">Points are <strong>not retroactive</strong>. Only JOs processed after the system was deployed will generate points.</div>
+
+<h2>2. Points Earned (Positive)</h2>
+<table>
+<tr><th>Metric</th><th>Lead Technician</th><th>Assistant</th><th>When It Triggers</th></tr>
+<tr><td>JO Completed</td><td class="pos">+10 pts</td><td class="pos">+5 pts</td><td>JO status changes to <code>completed</code></td></tr>
+<tr><td>Speed Bonus</td><td class="pos">+1 to +5 pts</td><td class="pos">+1 to +5 pts</td><td>On completion — compared to co-workers on the same JO</td></tr>
+<tr><td>Revenue Bonus</td><td class="pos">+1 pt per ₱1,000</td><td class="pos">+0.5 pt per ₱1,000</td><td>On completion — based on JO's <code>total_amount</code></td></tr>
+<tr><td>Clean Completion</td><td class="pos">+3 pts</td><td class="pos">+3 pts</td><td>On completion — only if the JO was never returned/revised at any point</td></tr>
+</table>
+
+<h2>3. Speed Bonus Scale</h2>
+<table>
+<tr><th>Tech's Duration vs Average of Teammates</th><th>Points</th></tr>
+<tr><td>50%+ faster than average</td><td class="pos">+5</td></tr>
+<tr><td>25–50% faster</td><td class="pos">+4</td></tr>
+<tr><td>At average speed (or solo tech)</td><td class="pos">+3</td></tr>
+<tr><td>Up to 25% slower</td><td class="pos">+2</td></tr>
+<tr><td>50%+ slower</td><td class="pos">+1</td></tr>
+</table>
+<div class="note">Average is calculated from the <code>work_duration</code> of all technicians on the same JO. A solo technician always gets +3.</div>
+
+<h2>4. Points Deducted (Negative)</h2>
+<table>
+<tr><th>Metric</th><th>Points</th><th>When It Triggers</th></tr>
+<tr><td>Needs Revision (inspection fail)</td><td class="neg">−5 pts</td><td>Inspector clicks the "Revision" button (JO was <code>under_inspection</code>)</td></tr>
+<tr><td>Return After Release</td><td class="neg">−10 pts</td><td>JO status changes from <code>released</code> → <code>returned_for_revision</code></td></tr>
+<tr><td>Clean Completion Reversed</td><td class="neg">−3 pts</td><td>JO returns after release AND the tech had already received Clean Completion bonus</td></tr>
+<tr><td>Removed from JO (with work time)</td><td class="neg">−3 pts</td><td>Tech unchecked from JO after their timer ran</td></tr>
+<tr><td>Removed from JO (no work time)</td><td class="neg">−1 pt</td><td>Tech unchecked before ever starting</td></tr>
+</table>
+
+<h2>5. JO Status Flow &amp; When Points Fire</h2>
+<div class="flow">pending → ongoing → under_inspection → car_washing → completed → released
+                ↘ returned_for_revision ↗
+                    cancelled (from any active status)</div>
+
+<table>
+<tr><th>JO Status Change</th><th>Points Action</th></tr>
+<tr><td><code>ongoing</code> — timer started</td><td>No points. Timer starts running for technicians.</td></tr>
+<tr><td><code>ongoing</code> → <code>under_inspection</code> (Done button)</td><td>No points. Timer pauses.</td></tr>
+<tr><td>Inspector clicks <strong>Pass</strong></td><td>No points. JO moves to <code>car_washing</code>.</td></tr>
+<tr><td>Inspector clicks <strong>Revision</strong></td><td>All techs get <strong>−5 pts</strong>. JO moves back to <code>ongoing</code>.</td></tr>
+<tr><td>Any status → <code>completed</code></td><td>Each tech gets: Completion + Speed Bonus + Revenue Bonus + Clean Bonus (if eligible). <strong>Per-tech duplicate check prevents double-awarding.</strong></td></tr>
+<tr><td><code>completed</code> → <code>released</code></td><td>No points.</td></tr>
+<tr><td><code>released</code> → <code>returned_for_revision</code></td><td>All techs get <strong>−10 pts</strong>. If clean bonus was already given, add <strong>−3 pts reversal</strong>.</td></tr>
+<tr><td>Technician unchecked (edit JO)</td><td><strong>−3 pts</strong> (if worked) or <strong>−1 pt</strong> (if never started).</td></tr>
+</table>
+
+<h2>6. Rules</h2>
+<table>
+<tr><th>#</th><th>Rule</th></tr>
+<tr><td>1</td><td><strong>Per-tech, per-JO completion.</strong> Each technician earns completion points for a given JO only once. If the JO completes again after a return, the same tech won't get double points — but a new/different tech on the rework will.</td></tr>
+<tr><td>2</td><td><strong>Different tech on rework.</strong> If Tech A is removed and Tech B finishes the rework, Tech B earns their own full completion points.</td></tr>
+<tr><td>3</td><td><strong>Penalties stack.</strong> Multiple revisions or returns each add their own penalty entry.</td></tr>
+<tr><td>4</td><td><strong>Clean Completion reversed on post-release return.</strong> If the tech already earned the +3 Clean bonus and the vehicle returns after release, a −3 reversal entry is added.</td></tr>
+<tr><td>5</td><td><strong>Revenue is based on <code>total_amount</code>.</strong> Lead = 1 pt per ₱1,000. Assist = 0.5 pt per ₱1,000.</td></tr>
+<tr><td>6</td><td><strong>Both PUT and PATCH handlers record points.</strong> Points fire whether the status is changed from the Edit JO modal (PUT) or the status dropdown (PATCH).</td></tr>
+<tr><td>7</td><td><strong>Date-range filtering.</strong> Dashboard and Reports filter points by <code>created_at</code> in the <code>technician_points</code> table.</td></tr>
+</table>
+
+<h2>7. Example Scenarios</h2>
+
+<h3>Scenario A — Clean JO (first try)</h3>
+<table>
+<tr><th>Event</th><th>Lead Tech</th><th>Assist Tech</th></tr>
+<tr><td>JO Completed (₱12,000 JO, average speed)</td><td>+10 (completion) +3 (speed@avg) +12 (revenue) +3 (clean) = <strong>+28</strong></td><td>+5 (completion) +3 (speed@avg) +6 (revenue×0.5) +3 (clean) = <strong>+17</strong></td></tr>
+</table>
+
+<h3>Scenario B — Needs Revision, then Completed</h3>
+<table>
+<tr><th>Event</th><th>Points (Lead)</th></tr>
+<tr><td>Inspector clicks Revision</td><td>−5 (revision penalty)</td></tr>
+<tr><td>JO Completed (same tech)</td><td>+10 +3 +12 +0 (no clean—had revision) = +25</td></tr>
+<tr><td><strong>Net</strong></td><td><strong>+20</strong></td></tr>
+</table>
+
+<h3>Scenario C — Post-release comeback (customer returns)</h3>
+<table>
+<tr><th>Event</th><th>Lead Tech (A)</th><th>New Tech (B)</th></tr>
+<tr><td>JO first completed clean</td><td>+28 (as Scenario A)</td><td>—</td></tr>
+<tr><td>Customer returns after release</td><td>−10 (return after release) −3 (clean reversed) = −13</td><td>—</td></tr>
+<tr><td>Tech A removed</td><td>−3 (removed with work)</td><td>—</td></tr>
+<tr><td>Tech B completes rework</td><td>no more points (already awarded)</td><td>+10 +3 +12 +0 (no clean) = +25</td></tr>
+<tr><td><strong>Net (Tech A)</strong></td><td><strong>+28 − 13 − 3 = +12</strong></td><td><strong>+25</strong></td></tr>
+</table>
+
+<h2>8. Where Points Show</h2>
+<table>
+<tr><th>Location</th><th>Content</th></tr>
+<tr><td>Dashboard — Top Technicians</td><td>Top 5, filterable by Today / Week / Month</td></tr>
+<tr><td>Reports — Ranking tab</td><td>Full leaderboard: rank, name, lead JOs, assist JOs, speed pts, revenue pts, quality pts, penalty pts, total score</td></tr>
+<tr><td>Reports — Points History tab</td><td>Every point entry: tech login ID, name, JO#, reason, points (+/−), date &amp; time</td></tr>
+</table>
+
+<h2>9. Database</h2>
+<table>
+<tr><th>Column</th><th>Type</th><th>Description</th></tr>
+<tr><td><code>id</code></td><td>INT AUTO_INCREMENT</td><td>Unique row ID</td></tr>
+<tr><td><code>technician_id</code></td><td>INT</td><td>References <code>staff.id</code></td></tr>
+<tr><td><code>job_order_id</code></td><td>INT (nullable)</td><td>Related JO (null if not JO-specific)</td></tr>
+<tr><td><code>reason</code></td><td>VARCHAR(100)</td><td>Human-readable reason (e.g. "JO Completed (Lead)")</td></tr>
+<tr><td><code>points</code></td><td>DECIMAL(6,1)</td><td>Positive or negative value</td></tr>
+<tr><td><code>created_at</code></td><td>DATETIME</td><td>Timestamp when the point was recorded</td></tr>
+</table>
+
+<h2>10. Reason Values in <code>technician_points</code></h2>
+<table>
+<tr><th>Reason</th><th>Points</th><th>Trigger</th></tr>
+<tr><td>JO Completed (Lead)</td><td class="pos">+10</td><td>Completion, <code>is_assist = 0</code></td></tr>
+<tr><td>JO Completed (Assistant)</td><td class="pos">+5</td><td>Completion, <code>is_assist = 1</code></td></tr>
+<tr><td>Speed Bonus</td><td class="pos">+1 to +5</td><td>Completion</td></tr>
+<tr><td>Revenue Bonus</td><td class="pos">variable</td><td>Completion</td></tr>
+<tr><td>Clean Completion</td><td class="pos">+3</td><td>Completion (no prior revision)</td></tr>
+<tr><td>Needs Revision (inspection)</td><td class="neg">−5</td><td>Inspection result = revision</td></tr>
+<tr><td>Return After Release</td><td class="neg">−10</td><td><code>released → returned_for_revision</code></td></tr>
+<tr><td>Clean Completion Reversed</td><td class="neg">−3</td><td>Return after release + clean bonus was already given</td></tr>
+<tr><td>Removed from JO</td><td class="neg">−3 or −1</td><td>Technician unchecked from JO</td></tr>
+</table>
+
+<div class="note" style="margin-top:30px;">
+<strong>Document Version:</strong> 2.0 &nbsp;|&nbsp;
+<strong>Last Updated:</strong> August 16, 2026 &nbsp;|&nbsp;
+<strong>System:</strong> The Autodok — Automotive Care Services
+</div>
+
+</body>
+</html>
